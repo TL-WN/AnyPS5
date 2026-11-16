@@ -7,6 +7,7 @@
 #include <cstring>
 #include <functional>
 #include <initializer_list>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
 #if (defined(__linux__) || defined(__APPLE__)) && defined(__x86_64__)
@@ -318,6 +319,16 @@ private:
 };
 
 #endif
+
+inline void RunAvxChecks(void (*checks)()) {
+#if LOWERING_EXECUTION_AVAILABLE
+    if (!HostExecutes({0xC5, 0xFC, 0x57, 0xC0})) {
+        std::cout << "skipped: execution checks require AVX\n";
+        return;
+    }
+#endif
+    checks();
+}
 
 }
 

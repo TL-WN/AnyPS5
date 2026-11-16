@@ -171,7 +171,7 @@ int main() {
     try {
         decoding();
         matching();
-        execution();
+        LoweringExecution::RunAvxChecks(execution);
         std::cout << "AVX2 twin lowering checks passed\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

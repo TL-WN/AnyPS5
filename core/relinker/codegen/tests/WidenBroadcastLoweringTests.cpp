@@ -192,8 +192,10 @@ int main() {
     try {
         decoding();
         matching();
-        execution();
-        pageEndMemory();
+        LoweringExecution::RunAvxChecks([] {
+            execution();
+            pageEndMemory();
+        });
         std::cout << "widen/broadcast lowering checks passed\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
