@@ -92,6 +92,42 @@ def main():
                 else:
                     assert result.returncode == 0, (directory, executable, result.stdout, result.stderr)
 
+            outside_directory = work / f"{windows}-outside-directory"
+            outside_directory.mkdir()
+            (outside_directory / "picker.bin").write_bytes(main_fixture())
+            case = work / f"{windows}-directory-link"
+            case.mkdir()
+            linked_directory = case / "linked"
+            if os.name == "nt":
+                subprocess.run(["cmd.exe", "/d", "/c", "mklink", "/J", str(linked_directory), str(outside_directory)],
+                               check=True, capture_output=True, timeout=10)
+            else:
+                linked_directory.symlink_to(outside_directory, target_is_directory=True)
+            for options, error in ((["--executable", "linked/picker.bin"], "--executable must be a file inside"),
+                                   (["--module-dir", "linked"], "--module-dir must be a directory inside")):
+                result, output = convert(case, windows, options)
+                assert result.returncode == 2 and error in result.stderr, (options, result.stdout, result.stderr)
+                assert not list(output.parent.iterdir()), options
+
+            if os.name != "nt":
+                outside = work / "outside.bin"
+                outside.write_bytes(main_fixture())
+                for label, destination, error in (
+                    ("outside", outside, "inside the guest module parent directory"),
+                    ("module", Path("../sce_module/bundled.prx"), "in a guest module directory"),
+                    ("inside", Path("picker.bin"), None),
+                ):
+                    case = work / f"{windows}-file-link-{label}"
+                    (case / "picker").mkdir(parents=True)
+                    (case / "picker/link.bin").symlink_to(destination)
+                    result, output = convert(case, windows, ["--executable", "picker/link.bin"])
+                    if error:
+                        assert result.returncode == 2 and error in result.stderr, (label, result.stdout, result.stderr)
+                        assert not list(output.parent.iterdir()), label
+                    else:
+                        assert result.returncode == 0, (label, result.stdout, result.stderr)
+                        assert (output.parent / ("picker.link.bin" + suffix)).is_file()
+
             case = work / f"{windows}-needed"
             (case / "Media" / "Modules").mkdir(parents=True)
             (case / "Media" / "Modules" / "needed.prx").write_bytes(module_with_symbol(True))

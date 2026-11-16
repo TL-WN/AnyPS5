@@ -203,7 +203,15 @@ std::vector<std::filesystem::path> ModuleDirectories(const Cli::Args& args, cons
 std::filesystem::path ResolveExtraExecutable(const std::filesystem::path& moduleRoot, const std::vector<std::filesystem::path>& moduleDirectories, const std::filesystem::path& relative, const std::string& executable) {
     const auto input = moduleRoot / relative;
     if (!std::filesystem::is_regular_file(input)) throw Domain::RelinkerException("--executable is not a file: " + Io::Utf8Path(input));
-    if (std::any_of(moduleDirectories.begin(), moduleDirectories.end(), [&](const auto& directory) { return Cli::SameDirectory(directory, input.parent_path()); }))
+    const auto resolved = Io::ResolvedPath(input);
+    if (!Io::ResolvedPathIsWithin(resolved, Io::ResolvedPath(moduleRoot)))
+        throw Domain::RelinkerException("--executable must be a file inside the guest module parent directory: " + executable);
+    const auto parent = input.parent_path();
+    const auto resolvedParent = resolved.parent_path();
+    if (std::any_of(moduleDirectories.begin(), moduleDirectories.end(), [&](const auto& directory) {
+        return std::filesystem::is_directory(directory) &&
+            (Io::SameFile(directory, parent) || (parent != resolvedParent && Io::SameFile(directory, resolvedParent)));
+    }))
         throw Domain::RelinkerException("--executable is in a guest module directory: " + executable);
     return input;
 }
