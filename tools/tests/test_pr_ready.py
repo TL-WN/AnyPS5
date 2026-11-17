@@ -18,10 +18,11 @@ def run(name, status="completed", conclusion="success", id=1):
 
 
 def node(number=7, labels=(), draft=False, mergeable="MERGEABLE", checks=None, changes=(), requested=(),
-         created="2026-01-01T00:00:00Z", title="fix: x", author="alice", more=False):
+         created="2026-01-01T00:00:00Z", title="fix: x", author="alice", more=False, state="OPEN", base="main"):
     contexts = [run(name, status, conclusion) for name, status, conclusion in (PASSING if checks is None else checks)]
     return {
         "number": number, "title": title, "isDraft": draft, "mergeable": mergeable, "createdAt": created,
+        "state": state, "baseRefName": base,
         "author": {"login": author} if author else None,
         "labels": {"nodes": [{"name": name} for name in labels]},
         "reviewRequests": {"nodes": [{"requestedReviewer": {"login": login}} for login in requested]},
@@ -190,6 +191,11 @@ class MainTests(unittest.TestCase):
 
         def fake(*args):
             if args[:2] == ("api", "graphql"):
+                number = next((int(arg.partition("=")[2]) for arg in args if arg.startswith("number=")), None)
+                if number is not None:
+                    calls.append(args)
+                    requested = next((item for item in prs if item["number"] == number), None)
+                    return json.dumps({"data": {"repository": {"pullRequest": requested}}})
                 if any("CLOSED" in arg for arg in args):
                     return json.dumps({"data": {"repository": {"pullRequests": {
                         "pageInfo": {"hasNextPage": False, "endCursor": None},
@@ -260,12 +266,21 @@ class MainTests(unittest.TestCase):
         calls = []
         _, out, _ = self.run_main(["--explain", "7"], [node(number=7, draft=True)], calls)
         self.assertEqual(out.strip(), "draft")
-        self.assertEqual(calls, [])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:2], ("api", "graphql"))
+        self.assertIn("number=7", calls[0])
 
     def test_explain_an_unknown_pull_request_fails(self):
         code, _, err = self.run_main(["--explain", "9"], [node(number=7)], [])
         self.assertEqual(code, 2)
         self.assertIn("#9 is not an open pull request", err)
+
+    def test_explain_rejects_closed_pull_requests_and_other_bases(self):
+        for pr in (node(state="CLOSED"), node(base="release")):
+            with self.subTest(pr=pr):
+                code, _, err = self.run_main(["--explain", "7"], [pr], [])
+                self.assertEqual(code, 2)
+                self.assertIn("#7 is not an open pull request to main", err)
 
     def test_a_malformed_response_is_an_error(self):
         code, _, err = self.run_main([], [{"number": 7}], [])

@@ -21,30 +21,45 @@ MARKER = "<!-- pr-review-queue -->"
 WRITE_PAUSE = 1.0
 PAGE_SIZE = 25
 
+READINESS_FIELDS = """
+fragment ReadinessFields on PullRequest {
+  number title isDraft mergeable headRefOid createdAt
+  author { login }
+  labels(first: 50) { nodes { name } }
+  reviewRequests(first: 50) { nodes { requestedReviewer { ... on User { login } } } }
+  latestOpinionatedReviews(first: 50) { nodes { state author { login } } }
+  commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
+    pageInfo { hasNextPage }
+    nodes {
+      __typename
+      ... on CheckRun { databaseId name status conclusion }
+      ... on StatusContext { context state }
+    }
+  } } } } }
+}
+"""
+
 QUERY = """
 query($owner: String!, $name: String!, $after: String, $size: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: OPEN, baseRefName: "main", first: $size, after: $after) {
       pageInfo { hasNextPage endCursor }
-      nodes {
-        number title isDraft mergeable headRefOid createdAt
-        author { login }
-        labels(first: 50) { nodes { name } }
-        reviewRequests(first: 50) { nodes { requestedReviewer { ... on User { login } } } }
-        latestOpinionatedReviews(first: 50) { nodes { state author { login } } }
-        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) {
-          pageInfo { hasNextPage }
-          nodes {
-            __typename
-            ... on CheckRun { databaseId name status conclusion }
-            ... on StatusContext { context state }
-          }
-        } } } } }
-      }
+      nodes { ...ReadinessFields }
     }
   }
 }
-"""
+""" + READINESS_FIELDS
+
+SINGLE_QUERY = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      state baseRefName
+      ...ReadinessFields
+    }
+  }
+}
+""" + READINESS_FIELDS
 
 CLOSED_QUERY = """
 query($owner: String!, $name: String!, $label: String!, $after: String) {
@@ -192,6 +207,18 @@ def fetch(repo):
         after = pagination_cursor(connection, seen, "open pull request")
 
 
+def fetch_one(repo, number):
+    owner, name = repo.split("/", 1)
+    page = json.loads(pr_labels.gh("api", "graphql", "-f", f"query={SINGLE_QUERY}",
+                                  "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"number={number}"))
+    if page.get("errors"):
+        raise ValueError(str(page["errors"])[:300])
+    node = page["data"]["repository"]["pullRequest"]
+    if node is None or node["state"] != "OPEN" or node["baseRefName"] != "main":
+        return None
+    return pull(node)
+
+
 def closed_with_label(repo):
     owner, name = repo.split("/", 1)
     closed, after = [], None
@@ -239,18 +266,18 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         repo = pr_labels.repository()
+        if args.explain is not None:
+            pr = fetch_one(repo, args.explain)
+            if pr is None:
+                parser.error(f"#{args.explain} is not an open pull request to main")
+            print("\n".join(blockers(pr)) or "nothing blocks it")
+            return 0
         prs = fetch(repo)
-        closed = closed_with_label(repo) if args.explain is None else []
+        closed = closed_with_label(repo)
     except subprocess.CalledProcessError as error:
         parser.error((error.stderr or str(error)).strip())
     except (ValueError, KeyError, TypeError, RecursionError) as error:
         parser.error(f"cannot read pull requests: {error}")
-    if args.explain is not None:
-        match = [pr for pr in prs if pr["number"] == args.explain]
-        if not match:
-            parser.error(f"#{args.explain} is not an open pull request to main")
-        print("\n".join(blockers(match[0])) or "nothing blocks it")
-        return 0
     ready = ranked(prs)
     queue = ready[:QUEUE_SIZE]
     try:
