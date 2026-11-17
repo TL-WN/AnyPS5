@@ -152,7 +152,7 @@ std::vector<ProgramHeader> ElfReader::ReadProgramHeaders() const {
 
         if (ph.Type == PT_LOAD && ph.FileSize > ph.MemorySize)
             throw RelinkerException("PT_LOAD file size exceeds memory size", ph.Offset);
-        if (ph.Type == PT_LOAD && !_rangeFits(ph.Offset, ph.FileSize, _fileBuffer.size()))
+        if (ph.Type == PT_LOAD && (ph.FileSize != 0 || ph.MemorySize == 0) && !_rangeFits(ph.Offset, ph.FileSize, _fileBuffer.size()))
             throw RelinkerException("Segment offset out of bounds", ph.Offset);
 
         headers.push_back(ph);
@@ -353,6 +353,7 @@ FileByteOffset ElfReader::TranslateVirtualAddress(VirtualAddress address) const 
 }
 
 std::vector<std::uint8_t> ElfReader::ReadSegment(const ProgramHeader& header) const {
+    if (header.Type == PT_LOAD && header.FileSize == 0 && header.MemorySize != 0) return {};
     if (!_rangeFits(header.Offset, header.FileSize, _fileBuffer.size())) {
         throw RelinkerException("Segment offset out of bounds", header.Offset);
     }

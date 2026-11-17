@@ -14,7 +14,8 @@ WindowsLoadImage::WindowsLoadImage(const std::vector<std::uint8_t>& source, cons
     for (const auto& header : headers) {
         if (header.Type != 1)
             continue;
-        if (header.FileSize > header.MemorySize || header.Offset > source.size() || header.FileSize > source.size() - header.Offset)
+        if (header.FileSize > header.MemorySize ||
+            ((header.FileSize != 0 || header.MemorySize == 0) && (header.Offset > source.size() || header.FileSize > source.size() - header.Offset)))
             throw Domain::RelinkerException("Invalid PT_LOAD file range", header.Offset);
         if (header.MappedAddress > std::numeric_limits<std::uint64_t>::max() - header.MemorySize)
             throw Domain::RelinkerException("PT_LOAD address overflow", header.MappedAddress);

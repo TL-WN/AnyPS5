@@ -24,7 +24,8 @@ public:
         headers = reader.ReadProgramHeaders();
         for (const auto& segment : headers) {
             if (segment.Type == Elfpatcher::PT_GNU_STACK) continue;
-            requireRange(segment.Offset, segment.FileSize);
+            if (segment.Type != Elfpatcher::PT_LOAD || segment.FileSize != 0 || segment.MemorySize == 0)
+                requireRange(segment.Offset, segment.FileSize);
             if (segment.MemorySize > std::numeric_limits<VirtualAddress>::max() - segment.MappedAddress)
                 throw RelinkerException("Strict filter: segment address overflow", segment.MappedAddress);
             if (segment.Type == 0x61000000) {

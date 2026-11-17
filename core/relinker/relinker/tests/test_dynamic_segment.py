@@ -26,6 +26,13 @@ def strict_fixture():
     return image
 
 
+def append_load(image, file_size):
+    count, = struct.unpack_from("<H", image, 0x38)
+    struct.pack_into("<H", image, 0x38, count + 1)
+    struct.pack_into("<IIQQQQQQ", image, 64 + count * 56,
+                     1, 6, 0xfffffffffffff000, 0x10000, 0x10000, file_size, 0x1000, 0x1000)
+
+
 def main():
     relinker = Path(sys.argv[1]).resolve()
     failures = []
@@ -88,6 +95,11 @@ def main():
         convert("empty", empty, "Unterminated dynamic segment")
 
         strict_modes = (["unused-filter=2"], ["--windows", "unused-filter=2"], ["--macos", "unused-filter=2"])
+        for file_size, error in ((0, None), (1, "Segment offset out of bounds")):
+            unbacked = strict_fixture()
+            append_load(unbacked, file_size)
+            convert(f"load-with-{file_size}-file-bytes", unbacked, error,
+                    modes=([], ["--windows"], ["--macos"], *strict_modes))
         for name, offset, address, size in (("file-offset", 0xffffffffffffffff, 0, 0),
                                            ("address-overflow", 0, 0xffffffffffffffff, 1)):
             ignored_stack = strict_fixture()
@@ -120,11 +132,15 @@ def main():
                 f"Strict filter: conflicting duplicate dynamic tag (offset 0x{repeated_debug:x})",
                 modes=(["unused-filter=2"],))
 
-        for name, delta, error in (("module-trailing-bytes", 8, None),
+        for name, delta, error in (("module-load-without-file-bytes", None, None),
+                                   ("module-trailing-bytes", 8, None),
                                    ("module-partial-terminator", -8, "Unterminated dynamic segment")):
             module = module_with_needed((b"libkernel.prx",), (0,))
-            declared = struct.unpack_from("<Q", module, 176 + 32)[0] + delta
-            struct.pack_into("<QQ", module, 176 + 32, declared, declared)
+            if delta is None:
+                append_load(module, 0)
+            else:
+                declared = struct.unpack_from("<Q", module, 176 + 32)[0] + delta
+                struct.pack_into("<QQ", module, 176 + 32, declared, declared)
             for mode in ([], ["--windows"], ["--macos"]):
                 case = work / (name + "-" + (mode[0].lstrip("-") if mode else "linux"))
                 (case / "prx").mkdir(parents=True)

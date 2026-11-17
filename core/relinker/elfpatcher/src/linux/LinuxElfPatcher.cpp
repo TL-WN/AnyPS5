@@ -122,7 +122,7 @@ void RequireZeroImportSlotAddends(const std::vector<std::uint8_t>& table) {
 }
 
 void RequireFileRange(const std::vector<std::uint8_t>& buf, const Domain::ProgramHeader& load) {
-    if (load.Offset > buf.size() || load.FileSize > buf.size() - load.Offset)
+    if (load.FileSize != 0 && (load.Offset > buf.size() || load.FileSize > buf.size() - load.Offset))
         throw Domain::RelinkerException("PT_LOAD at " + Hex(load.MappedAddress) + " has file bytes outside the input");
 }
 

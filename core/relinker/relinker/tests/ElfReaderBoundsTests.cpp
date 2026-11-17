@@ -656,6 +656,8 @@ int main() {
             valid.FileSize = 32;
             const auto segment = Relinker::ElfReader(Fixture()).ReadSegment(valid);
             Require(segment.size() == 32);
+            const Relinker::ProgramHeader unbacked{1, 6, 0x1000, 0x1000, 0x1000, 0, 0x1000, 0x1000};
+            Require(Relinker::ElfReader(Fixture()).ReadSegment(unbacked).empty());
         }},
         {"DT_SYMTAB pointer bounds", [] {
             constexpr std::uint64_t badPointers[] = {

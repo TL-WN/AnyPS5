@@ -47,7 +47,8 @@ GuestImage GuestImageReader::Read(const std::filesystem::path& path, std::vector
     for (const auto& header : image.Headers) {
         if (header.Type == Elfpatcher::PT_GNU_STACK || header.Type == 0 || header.Type == sceComment || header.Type == sceLibVersion) continue;
         if (header.Type == note && header.MappedAddress == 0 && header.MemorySize == 0) continue;
-        range(header.Offset, header.FileSize);
+        if (header.Type != Elfpatcher::PT_LOAD || header.FileSize != 0 || header.MemorySize == 0)
+            range(header.Offset, header.FileSize);
         if (header.Type == 1) {
             if (header.FileSize > header.MemorySize || header.MemorySize > std::numeric_limits<std::uint64_t>::max() - header.MappedAddress || (header.Flags & ~7u) != 0) fail("Invalid load segment");
             if (header.Alignment > 1 && (!std::has_single_bit(header.Alignment) || header.Offset % header.Alignment != header.MappedAddress % header.Alignment)) fail("Invalid load segment alignment");
