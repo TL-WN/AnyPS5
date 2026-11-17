@@ -6,7 +6,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pr_overlap
@@ -97,6 +98,18 @@ class BranchScanTests(RepositoryTestCase):
         self.assertEqual(pr_overlap.overlaps(self.prs, 0, 3)["exports"], {"shared"})
         self.assertIsNone(pr_overlap.overlaps(self.prs, 0, 2))
         self.assertIsNone(pr_overlap.overlaps(self.prs, 0, 4))
+
+    def test_windows_keeps_probes_in_the_pool_and_merges_serially(self):
+        pending = {number: self.prs[number] for number in (1, 3)}
+        with (patch.object(pr_overlap, "os", SimpleNamespace(name="nt")),
+              patch.object(pr_overlap, "ThreadPoolExecutor") as pool,
+              patch.object(pr_overlap, "related", return_value=pending) as related,
+              patch.object(pr_overlap, "scan") as scan):
+            pr_overlap.scan_all(self.prs, 4)
+        executor = pool.return_value.__enter__.return_value
+        related.assert_called_once_with(self.prs, executor)
+        executor.map.assert_not_called()
+        self.assertEqual(scan.call_args_list, [call(pr) for pr in pending.values()])
 
     def test_only_pull_requests_sharing_a_file_or_an_export_are_merged(self):
         merged = []

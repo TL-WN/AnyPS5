@@ -498,7 +498,8 @@ def related(prs, executor):
 def scan_all(prs, jobs):
     with ThreadPoolExecutor(max_workers=jobs) as executor:
         pending = related(prs, executor) if 0 in prs else prs
-        for index, _ in enumerate(executor.map(scan, pending.values()), 1):
+        merge_map = map if os.name == "nt" else executor.map
+        for index, _ in enumerate(merge_map(scan, pending.values()), 1):
             if index % PROGRESS_EVERY == 0 or index == len(pending):
                 progress(f"merged {index}/{len(pending)} pull requests into the base")
 
